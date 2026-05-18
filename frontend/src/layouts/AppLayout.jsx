@@ -1,110 +1,176 @@
-// layouts/AppLayout.jsx
-// Sidebar + Topbar shell used by every inner/protected page.
-// Usage: wrap page content with <AppLayout title="Dashboard">...</AppLayout>
-
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { notifGet, notifUnread, notifMarkAllRead, searchAll } from '../api'
+import { timeAgo, initials } from '../utils'
 
-// ── Icons (inline SVG, no dep needed) ──────────────────
-const Icon = ({ d, ...props }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+const I = ({ d, ...p }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...p}>
     <path strokeLinecap="round" strokeLinejoin="round" d={d} />
   </svg>
 )
-
 const icons = {
-  home:    'M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z M9 21V12h6v9',
-  user:    'M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5.33 0-8 2.67-8 4v1h16v-1c0-1.33-2.67-4-8-4z',
-  users:   'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
-  feed:    'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2zM7 8h5M7 12h8M7 16h5',
-  bell:    'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
-  search:  'M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z',
-  logout:  'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
-  settings:'M12 15a3 3 0 100-6 3 3 0 000 6zm0 0v0M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z',
+  home:     'M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5zM9 21V12h6v9',
+  feed:     'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2zM7 8h5M7 12h8M7 16h5',
+  users:    'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
+  user:     'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z',
+  settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z',
+  bell:     'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+  search:   'M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z',
+  logout:   'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
+  check:    'M5 13l4 4L19 7',
 }
 
 const navLinks = [
-  { to: '/dashboard',   label: 'Dashboard',   icon: 'home'  },
-  { to: '/feed',        label: 'Feed',         icon: 'feed'  },
-  { to: '/network',     label: 'Network',      icon: 'users', badge: '3' },
-  { to: '/profile',     label: 'My Profile',   icon: 'user'  },
+  { to: '/dashboard', label: 'Dashboard', icon: 'home'  },
+  { to: '/feed',      label: 'Feed',      icon: 'feed'  },
+  { to: '/network',   label: 'Network',   icon: 'users' },
+  { to: '/profile',   label: 'My Profile',icon: 'user'  },
 ]
 
-const secondaryLinks = [
-  { to: '/settings', label: 'Settings', icon: 'settings' },
-]
-
-// ── Helpers ──────────────────────────────────────────
-function initials(name = '') {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'CD'
+function Avatar({ user, size = 'md' }) {
+  const ini = initials(user?.name)
+  return (
+    <div className={`avatar avatar-${size}`}>
+      {user?.avatar_url ? <img src={user.avatar_url} alt={user.name} /> : ini}
+    </div>
+  )
 }
 
-// ── Component ────────────────────────────────────────
 export default function AppLayout({ children, title = '' }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
+  // ── Notifications ──────────────────────────────────
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifOpen, setNotifOpen]     = useState(false)
+  const [notifs, setNotifs]           = useState([])
+  const notifRef = useRef(null)
+
+  useEffect(() => {
+    notifUnread().then(({ data }) => setUnreadCount(data.unread_count)).catch(() => {})
+    const interval = setInterval(() => {
+      notifUnread().then(({ data }) => setUnreadCount(data.unread_count)).catch(() => {})
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const openNotifs = async () => {
+    if (!notifOpen) {
+      try {
+        const { data } = await notifGet({ limit: 10 })
+        setNotifs(data.notifications)
+      } catch {}
+    }
+    setNotifOpen(v => !v)
+  }
+
+  const markAllRead = async () => {
+    try {
+      await notifMarkAllRead()
+      setUnreadCount(0)
+      setNotifs(p => p.map(n => ({ ...n, is_read: true })))
+    } catch {}
+  }
+
+  // close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // ── Search ─────────────────────────────────────────
+  const [searchQ, setSearchQ]   = useState('')
+  const [searchRes, setSearchRes] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchRef = useRef(null)
+  const searchTimer = useRef(null)
+
+  const handleSearch = useCallback((val) => {
+    setSearchQ(val)
+    clearTimeout(searchTimer.current)
+    if (!val.trim()) { setSearchRes(null); setSearchOpen(false); return }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const { data } = await searchAll(val.trim())
+        setSearchRes(data)
+        setSearchOpen(true)
+      } catch {}
+    }, 350)
+  }, [])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const handleLogout = () => { logout(); navigate('/login') }
+
+  const notifLabel = (n) => {
+    if (n.type === 'connection_request') return <p><strong>{n.actor_name}</strong> sent you a connection request</p>
+    if (n.type === 'connection_accepted') return <p><strong>{n.actor_name}</strong> accepted your connection request</p>
+    if (n.type === 'post_like') return <p><strong>{n.actor_name}</strong> liked your post</p>
+    if (n.type === 'post_comment') return <p><strong>{n.actor_name}</strong> commented on your post</p>
+    return <p>{n.type}</p>
+  }
 
   return (
     <div className="app-layout">
-
-      {/* ══ SIDEBAR ══════════════════════════════════ */}
+      {/* ══ SIDEBAR ══════════════════════════════════════ */}
       <aside className="sidebar">
-        {/* Logo */}
         <NavLink to="/dashboard" className="sidebar-logo">
-          <div className="logo-mark">CD</div>
+          <div className="logo-mark">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M9 11.5 L14.5 17 L9 22.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M23 11.5 L17.5 17 L23 22.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           <span className="logo-text">ConnectDev</span>
         </NavLink>
 
-        {/* Primary nav */}
         <nav className="sidebar-nav">
           <span className="nav-section-label">Menu</span>
-
-          {navLinks.map(({ to, label, icon, badge }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              <Icon d={icons[icon]} />
+          {navLinks.map(({ to, label, icon }) => (
+            <NavLink key={to} to={to}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+              <I d={icons[icon]} />
               {label}
-              {badge && <span className="nav-badge">{badge}</span>}
+              {to === '/network' && unreadCount > 0 && (
+                <span className="nav-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+              )}
             </NavLink>
           ))}
 
           <span className="nav-section-label" style={{ marginTop: '1rem' }}>Account</span>
-
-          {secondaryLinks.map(({ to, label, icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              <Icon d={icons[icon]} />
-              {label}
-            </NavLink>
-          ))}
-
-          <button className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }}>
-            <Icon d={icons.logout} />
+          <NavLink to="/settings"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+            <I d={icons.settings} />
+            Settings
+          </NavLink>
+          <button className="nav-item" onClick={handleLogout}>
+            <I d={icons.logout} />
             Sign out
           </button>
         </nav>
 
-        {/* User footer */}
         <div className="sidebar-footer">
-          <div className="sidebar-user">
-            <div className="avatar avatar-sm">{initials(user?.name)}</div>
+          <NavLink to="/profile" className="sidebar-user" style={{ textDecoration: 'none' }}>
+            <Avatar user={user} size="sm" />
             <div className="sidebar-user-info">
               <div className="sidebar-user-name">{user?.name || 'Developer'}</div>
-              <div className="sidebar-user-role">Free plan</div>
+              <div className="sidebar-user-role">{user?.headline || 'ConnectDev'}</div>
             </div>
-          </div>
+          </NavLink>
         </div>
       </aside>
 
-      {/* ══ TOPBAR ═══════════════════════════════════ */}
+      {/* ══ TOPBAR ════════════════════════════════════════ */}
       <header className="topbar">
         <div className="topbar-left">
           <span className="topbar-page-title">{title}</span>
@@ -112,28 +178,108 @@ export default function AppLayout({ children, title = '' }) {
 
         <div className="topbar-right">
           {/* Search */}
-          <div className="search-box">
-            <Icon d={icons.search} style={{ width: 14, height: 14 }} />
-            <input placeholder="Search developers…" />
+          <div className="topbar-search-wrap" ref={searchRef}>
+            <div className="search-box">
+              <I d={icons.search} style={{ width: 14, height: 14 }} />
+              <input
+                placeholder="Search developers…"
+                value={searchQ}
+                onChange={e => handleSearch(e.target.value)}
+                onFocus={() => searchRes && setSearchOpen(true)}
+              />
+            </div>
+            {searchOpen && searchRes && (
+              <div className="search-dropdown">
+                {searchRes.users?.length > 0 && (
+                  <>
+                    <div className="search-section-label">People</div>
+                    {searchRes.users.map(u => (
+                      <div key={u.id} className="search-result-item"
+                        onClick={() => { navigate(`/profile/${u.id}`); setSearchOpen(false); setSearchQ('') }}>
+                        <div className="avatar avatar-sm">
+                          {u.avatar_url ? <img src={u.avatar_url} alt={u.name} /> : initials(u.name)}
+                        </div>
+                        <div>
+                          <div className="search-result-name">{u.name}</div>
+                          <div className="search-result-sub">{u.headline || u.location || 'Developer'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {searchRes.posts?.length > 0 && (
+                  <>
+                    <div className="search-section-label">Posts</div>
+                    {searchRes.posts.map(p => (
+                      <div key={p.id} className="search-result-item"
+                        onClick={() => { navigate('/feed'); setSearchOpen(false); setSearchQ('') }}>
+                        <div>
+                          <div className="search-result-name" style={{ fontSize: '0.8rem' }}>
+                            {p.content.slice(0, 60)}{p.content.length > 60 ? '…' : ''}
+                          </div>
+                          <div className="search-result-sub">{p.author_name}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!searchRes.users?.length && !searchRes.posts?.length && (
+                  <div className="search-empty">No results for "{searchQ}"</div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Notifications */}
-          <button className="topbar-icon-btn" title="Notifications">
-            <Icon d={icons.bell} style={{ width: 16, height: 16 }} />
-          </button>
+          <div className="notif-wrap" ref={notifRef}>
+            <button className="topbar-icon-btn" onClick={openNotifs} title="Notifications">
+              <I d={icons.bell} style={{ width: 16, height: 16 }} />
+              {unreadCount > 0 && (
+                <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="notif-panel">
+                <div className="notif-panel-header">
+                  <span className="notif-panel-title">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--brand)' }}
+                      onClick={markAllRead}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                {notifs.length === 0 ? (
+                  <div className="notif-empty">No notifications yet</div>
+                ) : (
+                  notifs.map(n => (
+                    <div key={n.id} className={`notif-item${n.is_read ? '' : ' unread'}`}>
+                      {!n.is_read ? <div className="notif-dot" /> : <div className="notif-dot-empty" />}
+                      <div>
+                        <div className="notif-text">{notifLabel(n)}</div>
+                        <div className="notif-time">{timeAgo(n.created_at)}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Avatar */}
-          <div className="avatar avatar-md">{initials(user?.name)}</div>
+          <NavLink to="/profile" style={{ textDecoration: 'none' }}>
+            <Avatar user={user} size="md" />
+          </NavLink>
         </div>
       </header>
 
-      {/* ══ MAIN ═════════════════════════════════════ */}
+      {/* ══ MAIN ═══════════════════════════════════════════ */}
       <main className="app-main">
-        <div className="page-content">
-          {children}
-        </div>
+        <div className="page-content">{children}</div>
       </main>
-
     </div>
   )
 }
