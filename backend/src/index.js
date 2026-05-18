@@ -10,6 +10,11 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/feed', require('./routes/feed'));
+app.use('/api/network', require('./routes/network'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/profile', require('./routes/profile'));
+app.use('/api/search', require('./routes/search'));
 
 // Health check
 app.get('/', (req, res) => {

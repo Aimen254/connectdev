@@ -96,4 +96,34 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe };
+// PUT /api/auth/password (protected)
+const changePassword = async (req, res) => {
+  const { current_password, new_password } = req.body;
+  const userId = req.user.id;
+
+  if (!current_password || !new_password) {
+    return res.status(400).json({ message: 'current_password and new_password are required' });
+  }
+  if (new_password.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters' });
+  }
+
+  try {
+    const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (result.rows.length === 0) return res.status(404).json({ message: 'User not found' });
+
+    const isMatch = await bcrypt.compare(current_password, result.rows[0].password_hash);
+    if (!isMatch) return res.status(400).json({ message: 'Incorrect current password' });
+
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(new_password, salt);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, userId]);
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+module.exports = { register, login, getMe, changePassword };
