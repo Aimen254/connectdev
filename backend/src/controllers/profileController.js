@@ -3,7 +3,9 @@ const path = require('path');
 const fs   = require('fs');
 const multer = require('multer');
 
-const uploadsDir = path.join(__dirname, '../../uploads/avatars');
+const uploadsDir = process.env.VERCEL
+  ? '/tmp/uploads/avatars'
+  : path.join(__dirname, '../../uploads/avatars');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const storage = multer.diskStorage({
