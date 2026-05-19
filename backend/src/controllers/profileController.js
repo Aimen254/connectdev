@@ -1,4 +1,27 @@
 const pool = require('../db/index');
+const path = require('path');
+const fs   = require('fs');
+const multer = require('multer');
+
+const uploadsDir = path.join(__dirname, '../../uploads/avatars');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    cb(null, `avatar_${req.user.id}_${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only JPEG, PNG, GIF or WebP images are allowed'));
+  },
+});
 
 // GET /api/profile/:id
 const getProfile = async (req, res) => {
@@ -156,4 +179,36 @@ const removeSkill = async (req, res) => {
   }
 };
 
-module.exports = { getProfile, updateProfile, updateAvatar, addSkill, removeSkill };
+// POST /api/profile/avatar/upload  (protected – file upload)
+const uploadAvatar = [
+  (req, res, next) => {
+    upload.single('avatar')(req, res, (err) => {
+      if (err) return res.status(400).json({ message: err.message || 'Upload failed' });
+      next();
+    });
+  },
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const userId = req.user.id;
+    try {
+      // delete old local upload if present
+      const old = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [userId]);
+      const oldUrl = old.rows[0]?.avatar_url;
+      if (oldUrl && oldUrl.startsWith('/uploads/')) {
+        const oldPath = path.join(__dirname, '../../', oldUrl);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+      const result = await pool.query(
+        `UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, name, email, avatar_url`,
+        [avatarUrl, userId]
+      );
+      res.json({ message: 'Avatar updated', user: result.rows[0] });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+];
+
+module.exports = { getProfile, updateProfile, updateAvatar, uploadAvatar, addSkill, removeSkill };

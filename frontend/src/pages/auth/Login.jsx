@@ -33,7 +33,6 @@ export default function Login() {
   const set = (field) => (e) => {
     setForm(p => ({ ...p, [field]: e.target.value }))
     if (errors[field]) setErrors(p => ({ ...p, [field]: '' }))
-    setApiError('')
   }
 
   const validate = () => {
@@ -47,6 +46,7 @@ export default function Login() {
 
   const handleSubmit = async (ev) => {
     ev.preventDefault()
+    setApiError('')
     if (!validate()) return
     setLoading(true)
     try {
@@ -54,7 +54,10 @@ export default function Login() {
       login(data.token, data.user)
       navigate('/dashboard')
     } catch (err) {
-      setApiError(err.response?.data?.message || 'Login failed. Please try again.')
+      const msg = err?.response?.data?.message
+        || (typeof err?.response?.data === 'string' ? err.response.data : null)
+        || 'Login failed. Please try again.'
+      setApiError(msg)
     } finally {
       setLoading(false)
     }

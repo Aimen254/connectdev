@@ -50,7 +50,8 @@ export const notifDelete        = (id)     => api.delete(`/notifications/${id}`)
 // ── Profile ──────────────────────────────────────────────────
 export const profileGet         = (id)     => api.get(`/profile/${id}`)
 export const profileUpdate      = (d)      => api.put('/profile', d)
-export const profileAvatar      = (d)      => api.put('/profile/avatar', d)
+export const profileAvatar       = (d)      => api.put('/profile/avatar', d)
+export const profileUploadAvatar = (form)   => api.post('/profile/avatar/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
 export const profileAddSkill    = (d)      => api.post('/profile/skills', d)
 export const profileRemoveSkill = (s)      => api.delete(`/profile/skills/${encodeURIComponent(s)}`)
 

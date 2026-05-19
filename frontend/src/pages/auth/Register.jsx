@@ -34,7 +34,6 @@ export default function Register() {
   const set = (field) => (e) => {
     setForm(p => ({ ...p, [field]: e.target.value }))
     if (errors[field]) setErrors(p => ({ ...p, [field]: '' }))
-    setApiError('')
   }
 
   const validate = () => {
@@ -53,6 +52,7 @@ export default function Register() {
 
   const handleSubmit = async (ev) => {
     ev.preventDefault()
+    setApiError('')
     if (!validate()) return
     setLoading(true)
     try {
@@ -60,7 +60,10 @@ export default function Register() {
       login(data.token, data.user)
       navigate('/dashboard')
     } catch (err) {
-      setApiError(err.response?.data?.message || 'Registration failed. Please try again.')
+      const msg = err?.response?.data?.message
+        || (typeof err?.response?.data === 'string' ? err.response.data : null)
+        || 'Registration failed. Please try again.'
+      setApiError(msg)
     } finally {
       setLoading(false)
     }

@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppLayout from '../../layouts/AppLayout'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/Toast'
-import { profileUpdate, profileAvatar, profileAddSkill, profileRemoveSkill, authChangePassword } from '../../api'
+import { profileUpdate, profileAvatar, profileUploadAvatar, profileAddSkill, profileRemoveSkill, authChangePassword } from '../../api'
 import { isValidEmail } from '../../utils'
 
 const I = ({ d, size = 15 }) => (
@@ -161,19 +161,56 @@ function ProfileSection({ user, updateUser }) {
 
 // ── Avatar Section ─────────────────────────────────────────────
 function AvatarSection({ user, updateUser }) {
-  const toast   = useToast()
-  const [url, setUrl]     = useState(user?.avatar_url || '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
+  const toast      = useToast()
+  const fileRef    = useRef(null)
+  const [tab, setTab]       = useState('upload')   // 'upload' | 'url'
+  const [preview, setPreview] = useState(user?.avatar_url || '')
+  const [file, setFile]       = useState(null)
+  const [url, setUrl]         = useState('')
+  const [drag, setDrag]       = useState(false)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState('')
+
+  const initials = user?.name?.[0]?.toUpperCase() || '?'
+
+  const applyFile = (f) => {
+    if (!f) return
+    if (!f.type.startsWith('image/')) { setError('Please select an image file'); return }
+    if (f.size > 5 * 1024 * 1024)    { setError('Image must be under 5 MB'); return }
+    setError('')
+    setFile(f)
+    const reader = new FileReader()
+    reader.onload = (e) => setPreview(e.target.result)
+    reader.readAsDataURL(f)
+  }
+
+  const onFileChange = (e) => applyFile(e.target.files?.[0])
+
+  const onDrop = (e) => {
+    e.preventDefault(); setDrag(false)
+    applyFile(e.dataTransfer.files?.[0])
+  }
 
   const save = async (ev) => {
     ev.preventDefault()
-    if (!url.trim()) { setError('URL is required'); return }
-    if (!/^https?:\/\/.+/.test(url)) { setError('Enter a valid URL starting with http:// or https://'); return }
+    setError('')
     setSaving(true)
     try {
-      const { data } = await profileAvatar({ avatar_url: url.trim() })
-      updateUser({ avatar_url: data.user.avatar_url })
+      if (tab === 'upload') {
+        if (!file) { setError('Please select an image first'); setSaving(false); return }
+        const form = new FormData()
+        form.append('avatar', file)
+        const { data } = await profileUploadAvatar(form)
+        updateUser({ avatar_url: data.user.avatar_url })
+        setPreview(data.user.avatar_url)
+        setFile(null)
+      } else {
+        if (!url.trim()) { setError('Please enter an image URL'); setSaving(false); return }
+        if (!/^https?:\/\/.+/.test(url)) { setError('URL must start with http:// or https://'); setSaving(false); return }
+        const { data } = await profileAvatar({ avatar_url: url.trim() })
+        updateUser({ avatar_url: data.user.avatar_url })
+        setPreview(url.trim())
+      }
       toast('Profile picture updated!', 'success')
     } catch {
       toast('Failed to update picture', 'error')
@@ -187,28 +224,114 @@ function AvatarSection({ user, updateUser }) {
       <div className="section-header">
         <span className="section-title">Profile picture</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', marginBottom: '1.5rem' }}>
-        <div className="avatar avatar-xl">
-          {url ? <img src={url} alt="Preview" onError={() => setUrl('')} /> : (user?.name?.[0]?.toUpperCase() || '?')}
+
+      {/* Avatar preview with click-to-upload */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.75rem' }}>
+        <div
+          style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }}
+          onClick={() => tab === 'upload' && fileRef.current?.click()}
+          title={tab === 'upload' ? 'Click to choose a photo' : undefined}
+        >
+          <div className="avatar avatar-xl" style={{ width: 80, height: 80, fontSize: 28 }}>
+            {preview
+              ? <img src={preview} alt="Avatar" onError={() => setPreview('')} />
+              : initials}
+          </div>
+          {tab === 'upload' && (
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', opacity: 0, transition: 'opacity 0.15s',
+            }}
+              className="avatar-upload-overlay"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22 }}>
+                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </div>
+          )}
         </div>
         <div>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: '0.35rem' }}>Current profile picture</p>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>Paste an image URL below to update</p>
+          <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)', marginBottom: '0.2rem' }}>
+            {file ? file.name : 'Profile photo'}
+          </p>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>
+            {tab === 'upload' ? 'JPEG, PNG, GIF or WebP · max 5 MB' : 'Enter a direct link to your photo'}
+          </p>
         </div>
       </div>
+
+      {/* Tab switcher */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: '1.25rem' }}>
+        {[['upload', 'Upload from device'], ['url', 'Use image URL']].map(([id, label]) => (
+          <button key={id} type="button"
+            onClick={() => { setTab(id); setError('') }}
+            style={{
+              padding: '0.5rem 1rem', fontSize: '0.82rem', fontWeight: 500,
+              background: 'none', border: 'none', cursor: 'pointer',
+              borderBottom: `2px solid ${tab === id ? 'var(--brand)' : 'transparent'}`,
+              color: tab === id ? 'var(--brand)' : 'var(--text-2)',
+              marginBottom: '-1px', transition: 'color 0.15s',
+              fontFamily: 'DM Sans, sans-serif',
+            }}
+          >{label}</button>
+        ))}
+      </div>
+
       <form onSubmit={save}>
-        <div className="field">
-          <label className="field-label">Image URL</label>
-          <input
-            className={`field-input${error ? ' has-error' : ''}`}
-            type="url" placeholder="https://example.com/photo.jpg"
-            value={url}
-            onChange={e => { setUrl(e.target.value); setError('') }}
-          />
-          {error && <p className="field-error" role="alert">{error}</p>}
-        </div>
+        {tab === 'upload' ? (
+          <>
+            {/* Hidden file input */}
+            <input
+              ref={fileRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+              style={{ display: 'none' }} onChange={onFileChange}
+            />
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={onDrop}
+              onClick={() => fileRef.current?.click()}
+              style={{
+                border: `2px dashed ${drag ? 'var(--brand)' : 'var(--border)'}`,
+                borderRadius: 'var(--r-lg)',
+                padding: '2rem 1rem',
+                textAlign: 'center',
+                cursor: 'pointer',
+                background: drag ? 'var(--brand-glow)' : 'var(--bg-input)',
+                transition: 'border-color 0.15s, background 0.15s',
+                marginBottom: '1rem',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+                style={{ width: 32, height: 32, color: 'var(--text-3)', marginBottom: '0.75rem' }}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: '0.25rem' }}>
+                {file ? `Selected: ${file.name}` : 'Drag & drop an image here'}
+              </p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
+                or <span style={{ color: 'var(--brand)', fontWeight: 500 }}>click to browse</span>
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="field">
+            <label className="field-label">Image URL</label>
+            <input
+              className={`field-input${error ? ' has-error' : ''}`}
+              type="url" placeholder="https://example.com/photo.jpg"
+              value={url}
+              onChange={e => { setUrl(e.target.value); setPreview(e.target.value); setError('') }}
+            />
+          </div>
+        )}
+
+        {error && <p className="field-error" role="alert" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+
         <button type="submit" className="btn btn-primary btn-sm" style={{ width: 'auto' }} disabled={saving}>
-          {saving ? 'Updating…' : 'Update picture'}
+          {saving ? 'Saving…' : 'Save photo'}
         </button>
       </form>
     </div>
